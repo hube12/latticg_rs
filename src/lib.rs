@@ -1,9 +1,7 @@
 mod math;
 
 use crate::math::big_fraction::BigFraction;
-use num_bigint::BigInt;
-use num_traits::{Zero, One};
-use std::borrow::Borrow;
+use num_traits::One;
 
 
 pub fn test() {
