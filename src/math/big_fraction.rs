@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 
 // This is a junky implementation, the real implementation is getting worked on (2k+ lines)
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct BigFraction {
     ntor: BigInt,
     dtor: BigInt,
@@ -174,24 +174,33 @@ impl<'a> BigFraction {
         return BigFraction::new(hi, lo).expect("An error occurred while multiplying");
     }
 
-    pub fn div(self, other: BigFraction) -> Self {
+    pub fn div(self, other: BigFraction) -> Option<Self> {
         let hi = self.ntor.mul(&other.dtor);
         let lo = self.dtor.mul(&other.ntor);
-        return BigFraction::new(hi, lo).expect("An error occurred while dividing");
+        if lo == BigInt::zero() {
+            return None;
+        }
+        return Some(BigFraction::new(hi, lo).expect("An error occurred while dividing"));
     }
 
-    pub fn div_int(self, other: BigInt) -> Self {
+    pub fn div_int(self, other: BigInt) -> Option<Self> {
         let hi = self.ntor.clone();
         let lo = self.dtor.mul(other);
-        return BigFraction::new(hi, lo).expect("An error occurred while dividing");
+        if lo == BigInt::zero() {
+            return None;
+        }
+        return Some(BigFraction::new(hi, lo).expect("An error occurred while dividing"));
     }
 
     pub fn negate(self) -> Self {
         return BigFraction::new(self.ntor.neg(), self.dtor).expect("An error occurred while negating");
     }
 
-    pub fn reciprocal(self) -> Self {
-        return BigFraction::new(self.dtor, self.ntor).expect("An error occurred while getting the reciprocal");
+    pub fn reciprocal(self) -> Option<Self> {
+        if self.ntor == BigInt::zero() {
+            return None;
+        }
+        return Some(BigFraction::new(self.dtor, self.ntor).expect("An error occurred while getting the reciprocal"));
     }
 
     pub fn floor(self) -> BigInt {
@@ -234,9 +243,9 @@ impl<'a> BigFraction {
         let mut dtor: BigInt = BigInt::one();
         let mut result: BigFraction = Self::get_one();
         let mut ntor: BigFraction = self.clone();
-        for i in 0..10 {
+        for i in 1..10 {
             dtor = dtor.mul(BigInt::from(i));
-            result = result.add(ntor.clone().div_int(dtor.clone()));
+            result = result.add(ntor.clone().div_int(dtor.clone()).expect("Shouldn't happend"));
             ntor = ntor.clone().mul(self.clone());
         }
         result
@@ -254,7 +263,7 @@ impl<'a> BigFraction {
         } else {
             length = digits.len();
         }
-        let y: BigFraction = self.div_int(BigInt::from(10).pow(length as u32));
+        let y: BigFraction = self.div_int(BigInt::from(10).pow(length as u32)).expect("Pow 10 was zero");
         if y.clone().compare_to(Self::get_two()) <= 0 {
             let mut result: BigFraction = Self::get_zero();
             let x: BigFraction = y.clone().sub(Self::get_one());
@@ -262,7 +271,7 @@ impl<'a> BigFraction {
             let mut dtor: BigInt = BigInt::one();
             let mut sign: BigInt = BigInt::one();
             for _ in 0..200 {
-                let temp: BigFraction = ntor.clone().div_int(dtor.clone()).mul_int(sign.clone());
+                let temp: BigFraction = ntor.clone().div_int(dtor.clone()).expect("This is not supposed to be zero").mul_int(sign.clone());
                 result = result.add(temp);
                 ntor = ntor.clone().mul(x.clone());
                 dtor = dtor.clone().add(BigInt::one());
@@ -275,7 +284,6 @@ impl<'a> BigFraction {
     }
     pub fn compare_to(self, other: BigFraction) -> i32 {
         return self.ntor.mul(other.dtor).cmp(&other.ntor.mul(self.dtor)) as i32;
-
     }
 
     pub fn compare_int_to(self, other: BigInt) -> i32 {
