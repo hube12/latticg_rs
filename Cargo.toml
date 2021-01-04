@@ -19,3 +19,12 @@ opt-level = 3
 
 [profile.release]
 opt-level = 3
+
+
+[[bin]]
+name = "latticg_example"
+path = "src/main.rs"
+
+[lib]
+name = "latticg"
+path = "src/lib.rs"
