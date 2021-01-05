@@ -6,7 +6,9 @@ use num_traits::{Signed, One, Zero, ToPrimitive};
 use std::ops::{Mul, Add, Sub, Neg, Div};
 use num_integer::Integer;
 use std::error::Error;
-use std::cmp::Ordering;
+use std::cmp::{Ordering, min, max};
+use std::io::Split;
+use num_traits::float::FloatCore;
 
 // This is a junky implementation, the real implementation is getting worked on (2k+ lines)
 
@@ -93,6 +95,9 @@ impl hash::Hash for BigFraction {
     }
 }
 
+const FRACTIONAL_BITS: u32 = 80;
+const SIZE_FRACTIONAL: u128 = 1u128<<FRACTIONAL_BITS;
+
 impl<'a> BigFraction {
     pub fn new(numerator: BigInt, denominator: BigInt) -> Result<Self, ParseBigFractionError> {
         if denominator.signum() == BigInt::zero() {
@@ -133,8 +138,29 @@ impl<'a> BigFraction {
         Self::new(numerator, One::one())
     }
 
-    pub fn parse(s: String) -> Option<BigInt> {
-        BigInt::parse_bytes(&*s.into_bytes(), 10)
+    pub fn parse(s: String) -> Result<Self, ParseBigFractionError> {
+        return Self::parse_radix(s, 10);
+    }
+
+    pub fn parse_radix(s: String, radix: u32) -> Result<Self, ParseBigFractionError> {
+        let mut it = s.split("/");
+        let ntor: Option<&str> = it.next();
+        if ntor.is_none() {
+            return Err(ParseBigFractionError::empty());
+        }
+        let ntor = BigInt::parse_bytes(ntor.unwrap().as_bytes(), radix);
+        if ntor.is_none() {
+            return Err(ParseBigFractionError::invalid());
+        }
+        let dtor = it.next();
+        if dtor.is_none() {
+            return BigFraction::new(ntor.unwrap(), BigInt::one());
+        }
+        let dtor = BigInt::parse_bytes(dtor.unwrap().as_bytes(), radix);
+        if dtor.is_none() {
+            return Err(ParseBigFractionError::invalid());
+        }
+        return BigFraction::new(ntor.unwrap(), dtor.unwrap());
     }
 
     pub fn add(self, other: BigFraction) -> Self {
@@ -217,7 +243,7 @@ impl<'a> BigFraction {
         if self.dtor.eq(&BigInt::one()) {
             self.ntor
         } else if self.ntor.signum() == BigInt::one() {
-            self.ntor.div(self.dtor).sub(BigInt::one())
+            self.ntor.div(self.dtor).add(BigInt::one())
         } else {
             self.ntor.div(self.dtor)
         }
@@ -255,7 +281,10 @@ impl<'a> BigFraction {
         if self.ntor == BigInt::one() && self.dtor == BigInt::one() {
             return Self::get_zero();
         }
-        let digits: String = self.to_double().to_string().split(".").next().unwrap().to_string();
+        if self.dtor == BigInt::zero() {
+            panic!("Unexpected division by 0")
+        }
+        let digits: String = self.ntor.clone().div(self.dtor.clone()).to_string();
 
         let length: usize;
         if digits.starts_with('0') || digits.starts_with('1') {
@@ -287,7 +316,7 @@ impl<'a> BigFraction {
     }
 
     pub fn compare_int_to(self, other: BigInt) -> i32 {
-        let other: BigFraction = BigFraction::new(other, BigInt::one()).expect("This should not fail");
+        let other: BigFraction = BigFraction::new(other.clone(), BigInt::one()).expect("This should not fail");
         return self.compare_to(other);
     }
 
@@ -308,7 +337,41 @@ impl<'a> BigFraction {
     }
 
     pub fn to_double(&self) -> f64 {
-        self.ntor.to_f64().expect("no numerator") / self.dtor.to_f64().expect("no denominator")
+        let b = Self::simplify(self.clone());
+        let r = self.ntor.clone().div(self.dtor.clone());
+        let b = b.sub_int(r.clone());
+        let b = Self::simplify(b);
+        let int = r.to_f64();
+        if int.is_none() {
+            return if self.ntor.clone().signum() > BigInt::from(0) { f64::infinity() } else { f64::infinity().neg() };
+        }
+        let top:f64 = int.unwrap();
+        let ntor_len:usize = b.ntor.clone().to_string().len();
+        let dtor_len:usize = b.dtor.clone().to_string().len();
+        let common_length:usize = min(ntor_len, dtor_len);
+        let difference:usize = max(ntor_len, dtor_len) - common_length;
+        let bot:f64;
+        if difference>SIZE_FRACTIONAL.to_string().len(){
+            // if there is way too low of a difference between the two we prefer to return round to 0
+            bot=0f64;
+        }else if common_length<SIZE_FRACTIONAL.to_string().len() {
+            let n=b.ntor.clone().to_f64();
+            let d=b.dtor.clone().to_f64();
+            if n.is_none() || d.is_none(){
+                bot=0f64;
+            }else{
+                bot=n.unwrap()/d.unwrap();
+            }
+        }else{
+            let n=b.ntor.clone().to_string()[0..(ntor_len-common_length+SIZE_FRACTIONAL.to_string().len())].parse::<f64>();
+            let d=b.dtor.clone().to_string()[0..(dtor_len-common_length+SIZE_FRACTIONAL.to_string().len())].parse::<f64>();
+            if n.is_err() || d.is_err(){
+                bot=0f64;
+            }else{
+                bot=n.unwrap()/d.unwrap();
+            }
+        }
+        top+bot
     }
 
     pub fn simplify(mut fraction: BigFraction) -> BigFraction {
